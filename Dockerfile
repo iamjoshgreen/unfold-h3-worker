@@ -125,14 +125,23 @@ ENV PIP_NO_INPUT=1
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 
+# The weights come from RunPod's model cache, staged on the host machine, so
+# they are neither in this image nor on a rented volume. This links them into
+# the folders ComfyUI reads before ComfyUI starts.
+COPY scripts/link-cached-models.sh /usr/local/bin/link-cached-models
+RUN chmod +x /usr/local/bin/link-cached-models
+
 # Set the default command to run when starting the container
-CMD ["/start.sh"]
+CMD ["/bin/bash", "-c", "/usr/local/bin/link-cached-models && exec /start.sh"]
 
 # Stage 2: Download models
 FROM base AS downloader
 
 ARG HUGGINGFACE_ACCESS_TOKEN
-ARG MODEL_TYPE=minimax-h3
+# NOTHING is baked in. 54GB of weights in the image took 11 minutes just to
+# package and blew RunPod's 30-minute build ceiling — the 80GB size cap and the
+# 30-minute clock contradict each other at that scale. The cache sidesteps both.
+ARG MODEL_TYPE=base
 
 # Change working directory to ComfyUI
 WORKDIR /comfyui
@@ -201,12 +210,6 @@ RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
 # rather than nvfp4 (15.7GB, but Blackwell-only, which re-creates the same
 # scarcity problem from the hardware side). int8 is the one that both fits and
 # runs on every card.
-RUN if [ "$MODEL_TYPE" = "minimax-h3" ]; then \
-      wget -q -O models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors && \
-      wget -q -O models/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors && \
-      wget -q -O models/vae/minimax_h3_video_vae_fp16.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors && \
-      wget -q -O models/vae/minimax_h3_audio_vae_fp32.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors; \
-    fi
 
 # Stage 3: Final image
 FROM base AS final
