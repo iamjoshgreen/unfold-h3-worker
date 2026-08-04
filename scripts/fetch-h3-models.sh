@@ -19,8 +19,21 @@ VOLUME_ROOT="${COMFY_MODEL_ROOT:-/runpod-volume/models}"
 REPO="https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main"
 
 # path-under-models  expected-bytes
+# THE SPLIT THAT MATTERS: the text encoder is uncompressed, the painter is not.
+#
+# The encoder reads the shot description ONCE per clip. The diffusion model runs
+# once per sampling step, twenty-plus times. So encoder size costs VRAM and
+# almost no time, while the diffusion model drives the entire bill. Compressing
+# the wrong one of these buys nothing and loses the thing that matters most here:
+# the Director writes very precise shots — camera direction, @ImageN tags placed
+# against specific subjects — and it is the encoder that has to understand them.
+#
+# So: bf16 encoder (51.5GB, no compression, the best reader there is) with the
+# pruned int8 transformer (21GB). 78.29GB total, which sits on a 96GB card with
+# ~18GB left for activations, at roughly a sixth the cost of running bf16 for
+# both.
 FILES="
-diffusion_models/minimax_h3_fl2va_bf16.safetensors 66280487368
+diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors 20970379616
 text_encoders/qwen3vl_32b_minimax_h3_bf16.safetensors 51506295256
 vae/minimax_h3_video_vae_fp16.safetensors 5207808496
 vae/minimax_h3_audio_vae_fp32.safetensors 605254808
