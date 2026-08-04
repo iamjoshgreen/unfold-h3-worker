@@ -125,23 +125,14 @@ ENV PIP_NO_INPUT=1
 COPY scripts/comfy-manager-set-mode.sh /usr/local/bin/comfy-manager-set-mode
 RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 
-# MiniMax H3's bf16 weights are 123.6GB — past the 80GB image cap — so they live
-# on the network volume and the first worker to boot puts them there. Every
-# worker after that finds them and goes straight to serving. See the script for
-# why this is not done from a pod.
-COPY scripts/fetch-h3-models.sh /usr/local/bin/fetch-h3-models
-RUN chmod +x /usr/local/bin/fetch-h3-models
-
 # Set the default command to run when starting the container
-CMD ["/bin/bash", "-c", "/usr/local/bin/fetch-h3-models && exec /start.sh"]
+CMD ["/start.sh"]
 
 # Stage 2: Download models
 FROM base AS downloader
 
 ARG HUGGINGFACE_ACCESS_TOKEN
-# No models in the image. H3's bf16 weights are 123.6GB and ride the network
-# volume; baking anything here would only bloat every worker's cold start.
-ARG MODEL_TYPE=base
+ARG MODEL_TYPE=minimax-h3
 
 # Change working directory to ComfyUI
 WORKDIR /comfyui
@@ -183,6 +174,38 @@ RUN if [ "$MODEL_TYPE" = "z-image-turbo" ]; then \
       wget -q --header="Authorization: Bearer ${HUGGINGFACE_ACCESS_TOKEN}" -O models/diffusion_models/z_image_turbo_bf16.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_bf16.safetensors && \
       wget -q --header="Authorization: Bearer ${HUGGINGFACE_ACCESS_TOKEN}" -O models/vae/ae.safetensors https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/vae/ae.safetensors && \
       wget -q --header="Authorization: Bearer ${HUGGINGFACE_ACCESS_TOKEN}" -O models/model_patches/Z-Image-Turbo-Fun-Controlnet-Union.safetensors https://huggingface.co/alibaba-pai/Z-Image-Turbo-Fun-Controlnet-Union/resolve/main/Z-Image-Turbo-Fun-Controlnet-Union.safetensors; \
+    fi
+
+# MiniMax H3 — first frame in, video with native audio out.
+#
+# THE WEIGHTS RIDE IN THE IMAGE, AND THAT IS THE WHOLE POINT.
+#
+# The alternative is a RunPod network volume, which costs rent every month
+# whether or not a clip is generated, and — worse — lives in exactly ONE
+# datacenter. An endpoint attached to one can only ever be scheduled there. Ours
+# sat in US-CA-2, which had NOTHING available at 80GB or above: every tier read
+# "Unavailable", workers stayed throttled, and jobs could not run at any price.
+# A worker that carries its own weights has no drive to rent and no building to
+# be stuck in — it takes a free GPU anywhere in the fleet.
+#
+# Which forces the sizing. 80GB is RunPod's image cap, the base is ~12GB, so the
+# models get ~68GB:
+#   diffusion  pruned int8   20.97GB
+#   encoder    int8          27.14GB
+#   video vae                 5.21GB
+#   audio vae                 0.61GB
+#                            ------
+#                            53.93GB   -> ~66GB image, inside the cap
+#
+# int8 for the encoder rather than bf16 (51.5GB, would breach the cap) and
+# rather than nvfp4 (15.7GB, but Blackwell-only, which re-creates the same
+# scarcity problem from the hardware side). int8 is the one that both fits and
+# runs on every card.
+RUN if [ "$MODEL_TYPE" = "minimax-h3" ]; then \
+      wget -q -O models/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors && \
+      wget -q -O models/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors && \
+      wget -q -O models/vae/minimax_h3_video_vae_fp16.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_video_vae_fp16.safetensors && \
+      wget -q -O models/vae/minimax_h3_audio_vae_fp32.safetensors https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/main/vae/minimax_h3_audio_vae_fp32.safetensors; \
     fi
 
 # Stage 3: Final image
