@@ -750,11 +750,21 @@ def handler(job):
 
         print(f"worker-comfyui - Processing {len(outputs)} output nodes...")
         for node_id, node_output in outputs.items():
-            if "images" in node_output:
+            # ComfyUI does NOT file video under "images". SaveVideo and SaveWEBM
+            # emit "videos"; the animated nodes emit "gifs". MiniMax H3 returns
+            # video with native audio, so a handler that only reads "images"
+            # discards the entire result and still reports success — the job
+            # looks like it worked and comes back with nothing in it.
+            # Every one of these carries the same filename/subfolder/type shape
+            # and is served by the same /view endpoint, so the body below is
+            # unchanged.
+            for media_key in ("images", "gifs", "videos"):
+                if media_key not in node_output:
+                    continue
                 print(
-                    f"worker-comfyui - Node {node_id} contains {len(node_output['images'])} image(s)"
+                    f"worker-comfyui - Node {node_id} contains {len(node_output[media_key])} {media_key} item(s)"
                 )
-                for image_info in node_output["images"]:
+                for image_info in node_output[media_key]:
                     filename = image_info.get("filename")
                     subfolder = image_info.get("subfolder", "")
                     img_type = image_info.get("type")
@@ -839,7 +849,9 @@ def handler(job):
                         errors.append(error_msg)
 
             # Check for other output types
-            other_keys = [k for k in node_output.keys() if k != "images"]
+            other_keys = [
+                k for k in node_output.keys() if k not in ("images", "gifs", "videos")
+            ]
             if other_keys:
                 warn_msg = (
                     f"Node {node_id} produced unhandled output keys: {other_keys}."
