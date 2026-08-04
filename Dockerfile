@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     python3.12 \
     python3.12-venv \
+    python3.12-dev \
     git \
     wget \
     libgl1 \
