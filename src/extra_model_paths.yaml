@@ -10,3 +10,10 @@ runpod_worker_comfy:
   upscale_models: models/upscale_models/
   vae: models/vae/
   unet: models/unet/
+  # MiniMax H3 keeps its transformer and its Qwen3-VL text encoder in these two
+  # directories. Without them ComfyUI mounts the volume, finds the VAEs, and
+  # still reports the H3 model as missing — the failure looks like a broken
+  # workflow rather than a missing path, which is exactly how it wasted an
+  # afternoon.
+  diffusion_models: models/diffusion_models/
+  text_encoders: models/text_encoders/
