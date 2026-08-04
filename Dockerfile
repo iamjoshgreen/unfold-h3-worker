@@ -20,7 +20,16 @@ ENV PYTHONUNBUFFERED=1
 ENV CMAKE_BUILD_PARALLEL_LEVEL=8
 
 # Install Python, git and other necessary tools
+# build-essential is NOT optional for MiniMax H3's int8_convrot weights.
+#
+# That quantization builds its kernels with Triton at run time, and Triton
+# shells out to a C compiler to do it. RunPod's CUDA base is a *runtime* image
+# with no toolchain, so the model loads, the graph executes, and the generation
+# node dies with "Failed to find C compiler. Please specify via CC environment
+# variable" — which reads like a broken workflow and is really a missing
+# package. Not documented anywhere upstream; found by running it.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     python3.12 \
     python3.12-venv \
     git \
