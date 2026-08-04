@@ -128,11 +128,11 @@ RUN chmod +x /usr/local/bin/comfy-manager-set-mode
 # The weights come from RunPod's model cache, staged on the host machine, so
 # they are neither in this image nor on a rented volume. This links them into
 # the folders ComfyUI reads before ComfyUI starts.
-COPY scripts/link-cached-models.sh /usr/local/bin/link-cached-models
-RUN chmod +x /usr/local/bin/link-cached-models
+COPY scripts/fetch-models.sh /usr/local/bin/fetch-models
+RUN chmod +x /usr/local/bin/fetch-models
 
 # Set the default command to run when starting the container
-CMD ["/bin/bash", "-c", "/usr/local/bin/link-cached-models && exec /start.sh"]
+CMD ["/bin/bash", "-c", "/usr/local/bin/fetch-models && exec /start.sh"]
 
 # Stage 2: Download models
 FROM base AS downloader
